@@ -71,7 +71,7 @@ end
 			_constraints.Remove(constraint);
 		}
 
-		public TableDiff Compare(Table t) {
+		public TableDiff Compare(Table t, CompareOptions options = CompareOptions.None) {
 			var diff = new TableDiff {
 				Owner = t.Owner,
 				Name = t.Name
@@ -84,7 +84,7 @@ end
 					diff.ColumnsAdded.Add(c);
 				} else {
 					//compare mutual columns
-					var cDiff = c.Compare(c2);
+					var cDiff = c.Compare(c2, options);
 					if (cDiff.IsDiff) {
 						diff.ColumnsDiff.Add(cDiff);
 					}

@@ -8,6 +8,17 @@ namespace SchemaZen.Library.Command {
 		public string Target { get; set; }
 		public bool Verbose { get; set; }
 		public string OutDiff { get; set; }
+		public bool IgnoreColumnPosition { get; set; }
+
+		public CompareOptions CompareOptions {
+			get {
+				var flags = CompareOptions.None;
+
+				if (IgnoreColumnPosition) flags |= CompareOptions.IgnoreColumnPosition;
+
+				return flags;
+			}
+		}
 
 		public bool Execute() {
 			var sourceDb = new Database();
@@ -16,7 +27,7 @@ namespace SchemaZen.Library.Command {
 			targetDb.Connection = Target;
 			sourceDb.Load();
 			targetDb.Load();
-			var diff = sourceDb.Compare(targetDb);
+			var diff = sourceDb.Compare(targetDb, CompareOptions);
 			if (diff.IsDiff) {
 				Console.WriteLine("Databases are different.");
 				Console.WriteLine(diff.SummarizeChanges(Verbose));

@@ -11,6 +11,7 @@ namespace SchemaZen.console {
 		private string _outDiff;
 		private bool _overwrite;
 		private bool _verbose;
+		private bool _ignoreColumnPosition;
 
 		public Compare() {
 			IsCommand("Compare", "CreateDiff two databases.");
@@ -36,6 +37,10 @@ namespace SchemaZen.console {
 				"v|verbose",
 				"Enable verbose mode (show detailed changes).",
 				o => _verbose = o != null);
+			HasOption(
+				"ignoreColumnPosition",
+				"Ignore column position when diffing.",
+				o => _ignoreColumnPosition = o != null);
 		}
 
 		public override int Run(string[] remainingArguments) {
@@ -54,7 +59,8 @@ namespace SchemaZen.console {
 				Target = _target,
 				Verbose = _verbose,
 				OutDiff = _outDiff,
-				Overwrite = _overwrite
+				Overwrite = _overwrite,
+				IgnoreColumnPosition = _ignoreColumnPosition,
 			};
 
 			try {

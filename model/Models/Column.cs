@@ -61,8 +61,8 @@ namespace SchemaZen.Library.Models {
 
 		public bool Persisted { get; set; }
 
-		public ColumnDiff Compare(Column c) {
-			return new ColumnDiff(this, c);
+		public ColumnDiff Compare(Column c, CompareOptions options) {
+			return new ColumnDiff(this, c, options);
 		}
 
 		private string ScriptBase(bool includeDefaultConstraint) {
@@ -166,17 +166,20 @@ namespace SchemaZen.Library.Models {
 	public class ColumnDiff {
 		public Column Source { get; set; }
 		public Column Target { get; set; }
+		public CompareOptions CompareOptions { get; set; }
 
-		public ColumnDiff(Column target, Column source) {
+		public ColumnDiff(Column target, Column source, CompareOptions options = CompareOptions.None) {
 			Source = source;
 			Target = target;
+			CompareOptions = options;
 		}
 
 		public bool IsDiff => IsDiffBase || DefaultIsDiff;
 
 		private bool IsDiffBase => Source.IsNullable != Target.IsNullable ||
 			Source.Length != Target.Length ||
-			Source.Position != Target.Position || Source.Type != Target.Type ||
+			((CompareOptions & CompareOptions.IgnoreColumnPosition) != CompareOptions.IgnoreColumnPosition && Source.Position != Target.Position) ||
+			Source.Type != Target.Type ||
 			Source.Precision != Target.Precision ||
 			Source.Scale != Target.Scale ||
 			Source.ComputedDefinition != Target.ComputedDefinition ||

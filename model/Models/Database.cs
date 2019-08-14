@@ -1060,7 +1060,7 @@ where name = @dbname
 
 		#region Compare
 
-		public DatabaseDiff Compare(Database db) {
+		public DatabaseDiff Compare(Database db, CompareOptions options = CompareOptions.None) {
 			var diff = new DatabaseDiff {
 				Db = db
 			};
@@ -1081,7 +1081,7 @@ where name = @dbname
 						diff.TablesAdded.Add(t);
 					} else {
 						//compare mutual tables
-						var tDiff = t.Compare(t2);
+						var tDiff = t.Compare(t2, options);
 						if (!tDiff.IsDiff)
 							continue;
 						if (t.IsType) {
