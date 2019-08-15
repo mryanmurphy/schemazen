@@ -1204,21 +1204,29 @@ where name = @dbname
 				diff.SynonymsDeleted.Add(s);
 			}
 
-			//get added and compare permissions
-			foreach (var p in Permissions) {
-				var p2 = db.FindPermission(p.Name);
-				if (p2 == null) {
-					diff.PermissionsAdded.Add(p);
-				} else {
-					if (p.ScriptCreate() != p2.ScriptCreate()) {
-						diff.PermissionsDiff.Add(p);
+			if ((options & CompareOptions.IgnorePermissions) != CompareOptions.IgnorePermissions) {
+				//get added and compare permissions
+				foreach (var p in Permissions)
+				{
+					var p2 = db.FindPermission(p.Name);
+					if (p2 == null)
+					{
+						diff.PermissionsAdded.Add(p);
+					}
+					else
+					{
+						if (p.ScriptCreate() != p2.ScriptCreate())
+						{
+							diff.PermissionsDiff.Add(p);
+						}
 					}
 				}
-			}
 
-			//get deleted permissions
-			foreach (var p in db.Permissions.Where(p => FindPermission(p.Name) == null)) {
-				diff.PermissionsDeleted.Add(p);
+				//get deleted permissions
+				foreach (var p in db.Permissions.Where(p => FindPermission(p.Name) == null))
+				{
+					diff.PermissionsDeleted.Add(p);
+				}
 			}
 
 			return diff;

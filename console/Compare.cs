@@ -12,6 +12,7 @@ namespace SchemaZen.console {
 		private bool _overwrite;
 		private bool _verbose;
 		private bool _ignoreColumnPosition;
+		private bool _ignorePermissions;
 
 		public Compare() {
 			IsCommand("Compare", "CreateDiff two databases.");
@@ -41,6 +42,10 @@ namespace SchemaZen.console {
 				"ignoreColumnPosition",
 				"Ignore column position when diffing.",
 				o => _ignoreColumnPosition = o != null);
+			HasOption(
+				"ignorePermissions",
+				"Ignore permissions when diffing.",
+				o => _ignorePermissions = o != null);
 		}
 
 		public override int Run(string[] remainingArguments) {
@@ -61,6 +66,7 @@ namespace SchemaZen.console {
 				OutDiff = _outDiff,
 				Overwrite = _overwrite,
 				IgnoreColumnPosition = _ignoreColumnPosition,
+				IgnorePermissions = _ignorePermissions,
 			};
 
 			try {

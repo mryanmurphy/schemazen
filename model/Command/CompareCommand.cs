@@ -9,12 +9,14 @@ namespace SchemaZen.Library.Command {
 		public bool Verbose { get; set; }
 		public string OutDiff { get; set; }
 		public bool IgnoreColumnPosition { get; set; }
+		public bool IgnorePermissions { get; set; }
 
 		public CompareOptions CompareOptions {
 			get {
 				var flags = CompareOptions.None;
 
 				if (IgnoreColumnPosition) flags |= CompareOptions.IgnoreColumnPosition;
+				if (IgnorePermissions) flags |= CompareOptions.IgnorePermissions;
 
 				return flags;
 			}
