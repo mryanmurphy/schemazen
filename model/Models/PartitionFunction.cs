@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace SchemaZen.Library.Models {
@@ -39,17 +40,80 @@ namespace SchemaZen.Library.Models {
 		/// </summary>
 		public List<string> BoundaryValues { get; }
 
-		public PartitionFunction(string name, string inputParameterType, IEnumerable<string> boundaryValues, RangeKind range = RangeKind.LEFT) {
+		public int InputParameterLength { get; set; }
+		public byte InputParameterPrecision { get; set; }
+		public int InputParameterScale { get; set; }
+
+		public PartitionFunction(string name, string inputParameterType, RangeKind range) {
 			Name = name;
 			InputParameterType = inputParameterType;
-			BoundaryValues = new List<string>(boundaryValues);
 			Range = range;
+			BoundaryValues = new List<string>();
+		}
+
+		public PartitionFunction(string name, string inputParameterType, RangeKind range, int inputParameterLength)
+			: this (name, inputParameterType, range) {
+			InputParameterLength = inputParameterLength;
+		}
+
+		public PartitionFunction(string name, string inputParameterType, RangeKind range, byte inputParameterPrecision, int inputParameterScale)
+			: this (name, inputParameterType, range) {
+			InputParameterPrecision = inputParameterPrecision;
+			InputParameterScale = inputParameterScale;
 		}
 
 		public string ScriptCreate() {
-			var text = new StringBuilder($"CREATE PARTITION FUNCTION {Name} ({InputParameterType})");
+			var text = new StringBuilder($"CREATE PARTITION FUNCTION {Name} (");
+
+			switch (InputParameterType) {
+				case "bigint":
+				case "bit":
+				case "date":
+				case "datetime":
+				case "datetime2":
+				case "datetimeoffset":
+				case "float":
+				case "hierarchyid":
+				case "int":
+				case "money":
+				case "real":
+				case "smalldatetime":
+				case "smallint":
+				case "smallmoney":
+				case "sql_variant":
+				case "time":
+				case "tinyint":
+				case "uniqueidentifier":
+				case "geography":
+				case "sysname":
+					text.Append(InputParameterType);
+					break;
+
+				case "binary":
+				case "char":
+				case "nchar":
+				case "nvarchar":
+				case "varbinary":
+				case "varchar":
+					var lengthString = InputParameterLength.ToString();
+					if (lengthString == "-1") lengthString = "max";
+					text.Append($"{InputParameterType}({lengthString})");
+					break;
+
+				case "decimal":
+				case "numeric":
+					text.Append($"{InputParameterType}({InputParameterPrecision},{InputParameterScale})");
+					break;
+
+				default:
+					var message = $"Error scripting partition function {Name}."
+						+ "SQL data type {InputParameterType} is not supported.";
+					throw new NotSupportedException(message);
+			}
+
+			text.AppendLine(")");
 			text.AppendLine($"AS RANGE {Range:G}");
-			text.AppendLine($"FOR VALUES ({string.Join(",", BoundaryValues.ToArray())});");
+			text.AppendLine($"FOR VALUES ({string.Join(", ", BoundaryValues.ToArray())});");
 			return text.ToString();
 		}
 	}

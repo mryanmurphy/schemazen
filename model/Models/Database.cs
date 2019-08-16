@@ -81,6 +81,8 @@ namespace SchemaZen.Library.Models {
 		public List<SqlUser> Users { get; set; } = new List<SqlUser>();
 		public List<Constraint> ViewIndexes { get; set; } = new List<Constraint>();
 		public List<Permission> Permissions { get; set; } = new List<Permission>();
+		public List<PartitionFunction> PartitionFunctions { get; set; } = new List<PartitionFunction>();
+		public List<PartitionScheme> PartitionSchemes { get; set; } = new List<PartitionScheme>();
 
 		public DbProp FindProp(string name) {
 			return Props.FirstOrDefault(p =>
@@ -126,6 +128,10 @@ namespace SchemaZen.Library.Models {
 
 		public Permission FindPermission(string name) {
 			return Permissions.FirstOrDefault(g => g.Name == name);
+		}
+
+		public PartitionFunction FindPartitionFunction(string name) {
+			return PartitionFunctions.FirstOrDefault(pf => pf.Name == name);
 		}
 
 		public List<Table> FindTablesRegEx(string pattern, string excludePattern = null) {
@@ -179,6 +185,8 @@ namespace SchemaZen.Library.Models {
 			Synonyms.Clear();
 			Roles.Clear();
 			Permissions.Clear();
+			PartitionFunctions.Clear();
+			PartitionSchemes.Clear();
 
 			using (var cn = new SqlConnection(Connection)) {
 				cn.Open();
@@ -201,7 +209,91 @@ namespace SchemaZen.Library.Models {
 					LoadSynonyms(cm);
 					LoadRoles(cm);
 					LoadPermissions(cm);
+					LoadPartitionFunctions(cm);
+					LoadPartitionSchemes(cm);
 				}
+			}
+		}
+
+		private void LoadPartitionFunctions(SqlCommand cm) {
+			try {
+				// Load function metadata
+				cm.CommandText = @"
+SELECT 
+	pf.[name] AS PartitionFunctionName
+	, CASE WHEN pf.[boundary_value_on_right] = 1 THEN 'RIGHT' ELSE 'LEFT' END AS PartitionFunctionRangeType
+	, pp.user_type_id AS InputTypeID
+	, CASE WHEN pp.system_type_id = pp.user_type_id THEN 0 ELSE 1 END AS IsInputTypeUserDefined
+	, CASE WHEN pp.system_type_id = pp.user_type_id THEN st.[name] ELSE ut.[name] END AS TypeName
+	, pp.max_length AS InputMaxLength
+	, pp.[precision] AS InputPrecision
+	, pp.scale AS InputScale
+	, pp.collation_name AS InputCollation
+FROM sys.partition_functions pf
+INNER JOIN sys.partition_parameters pp ON pf.function_id = pp.function_id
+LEFT JOIN sys.types st ON pp.system_type_id = st.system_type_id AND st.is_user_defined = 0
+LEFT JOIN sys.types ut ON pp.user_type_id = ut.user_type_id AND ut.is_user_defined = 1
+";
+
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["PartitionFunctionName"];
+						var inputType = (string)dr["InputType"];
+						var range = (PartitionFunction.RangeKind)Enum.Parse(typeof(PartitionFunction.RangeKind), (string)dr["PartitionFunctionRangeType"]);
+
+						var partitionFunction = new PartitionFunction(name, inputType, range);
+
+						PartitionFunctions.Add(partitionFunction);
+					}
+				}
+
+				// Load function values
+				cm.CommandText = @"
+SELECT 
+	pf.[name] AS PartitionFunctionName
+	, pv.[value] AS InputValue
+FROM sys.partition_functions pf
+INNER JOIN sys.partition_parameters pp ON pf.function_id = pp.function_id
+INNER JOIN sys.partition_range_values pv ON pf.function_id = pv.function_id AND pp.parameter_id = pv.parameter_id
+";
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["PartitionFunctionName"];
+						var value = (string)dr["InputValue"];
+						FindPartitionFunction(name)?.BoundaryValues?.Add(value);
+					}
+				}
+
+			} catch (SqlException) {
+				// SQL server version doesn't support partitions, nothing to do here
+			}
+		}
+
+		private void LoadPartitionSchemes(SqlCommand cm) {
+			try {
+				// todo: split FGN from PS similar to above. Make a second pass instead of goofy xml jazz
+				cm.CommandText = @"
+SELECT 
+	ps.*
+	, pf.[name] AS PartitionFunctionName
+	,(
+		SELECT
+		STUFF((SELECT
+			N',' + QUOTENAME(fg.name)
+				FROM sys.data_spaces ds
+				JOIN sys.destination_data_spaces AS dds ON dds.partition_scheme_id = ps.data_space_id
+				JOIN sys.filegroups AS fg ON fg.data_space_id = dds.data_space_id
+				WHERE ps.data_space_id = ds.data_space_id
+				ORDER BY dds.destination_id
+				FOR XML PATH(''), TYPE
+		).value('.', 'nvarchar(MAX)'),1,1,N'')
+	) AS FileGroupNames
+FROM sys.partition_schemes ps
+INNER JOIN sys.partition_functions pf ON ps.function_id = pf.function_id
+
+";
+			} catch (SqlException) {
+				// SQL server version doesn't support partitions, nothing to do here
 			}
 		}
 
@@ -348,7 +440,7 @@ begin
 end
 
 select 
-    name
+	name
 ,   script
 from #ScriptedRoles
 ";
@@ -579,7 +671,7 @@ from #ScriptedRoles
 						UPDATE_RULE, 
 						DELETE_RULE,
 						fk.is_disabled,
-                        fk.is_system_named
+						fk.is_system_named
 					from INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
 						inner join sys.foreign_keys fk on rc.CONSTRAINT_NAME = fk.name and rc.CONSTRAINT_SCHEMA = OBJECT_SCHEMA_NAME(fk.parent_object_id)";
 			using (var dr = cm.ExecuteReader()) {
@@ -740,7 +832,7 @@ order by fk.name, fkc.constraint_column_id
 						c.name as COLUMN_NAME, 
 						d.name as DEFAULT_NAME, 
 						d.definition as DEFAULT_VALUE,
-                        d.is_system_named as IS_SYSTEM_NAMED
+						d.is_system_named as IS_SYSTEM_NAMED
 					from sys.tables t 
 						inner join sys.columns c on c.object_id = t.object_id
 						inner join sys.default_constraints d on c.column_id = d.parent_column_id
@@ -919,18 +1011,18 @@ order by fk.name, fkc.constraint_column_id
 		private void LoadUserDefinedTypes(SqlCommand cm) {
 			//get types
 			cm.CommandText = @"
-            select
-                s.name as 'Type_Schema',
-                t.name as 'Type_Name',
-                tt.name as 'Base_Type_Name',
-                t.max_length as 'Max_Length',
-                t.is_nullable as 'Nullable'	
-            from sys.types t
-            inner join sys.schemas s on s.schema_id = t.schema_id
-            inner join sys.types tt on t.system_type_id = tt.user_type_id
-            where
-                t.is_user_defined = 1
-            and t.is_table_type = 0";
+			select
+				s.name as 'Type_Schema',
+				t.name as 'Type_Name',
+				tt.name as 'Base_Type_Name',
+				t.max_length as 'Max_Length',
+				t.is_nullable as 'Nullable'	
+			from sys.types t
+			inner join sys.schemas s on s.schema_id = t.schema_id
+			inner join sys.types tt on t.system_type_id = tt.user_type_id
+			where
+				t.is_user_defined = 1
+			and t.is_table_type = 0";
 
 			using (var dr = cm.ExecuteReader()) {
 				LoadUserDefinedTypesBase(dr, UserDefinedTypes);
