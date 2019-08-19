@@ -51,13 +51,9 @@ namespace SchemaZen.Library.Models {
 			BoundaryValues = new List<string>();
 		}
 
-		public PartitionFunction(string name, string inputParameterType, RangeKind range, int inputParameterLength)
+		public PartitionFunction(string name, string inputParameterType, RangeKind range, int inputParameterLength, byte inputParameterPrecision, int inputParameterScale)
 			: this (name, inputParameterType, range) {
 			InputParameterLength = inputParameterLength;
-		}
-
-		public PartitionFunction(string name, string inputParameterType, RangeKind range, byte inputParameterPrecision, int inputParameterScale)
-			: this (name, inputParameterType, range) {
 			InputParameterPrecision = inputParameterPrecision;
 			InputParameterScale = inputParameterScale;
 		}

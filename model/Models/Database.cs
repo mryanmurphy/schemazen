@@ -238,11 +238,13 @@ LEFT JOIN sys.types ut ON pp.user_type_id = ut.user_type_id AND ut.is_user_defin
 				using (var dr = cm.ExecuteReader()) {
 					while (dr.Read()) {
 						var name = (string)dr["PartitionFunctionName"];
-						var inputType = (string)dr["InputType"];
 						var range = (PartitionFunction.RangeKind)Enum.Parse(typeof(PartitionFunction.RangeKind), (string)dr["PartitionFunctionRangeType"]);
+						var inputType = (string)dr["InputType"];
+						int inputLength = int.Parse((string)dr["InputMaxLength"]);
+						byte inputPrecision = byte.Parse((string)dr["InputPrecision"]);
+						int inputScale = int.Parse((string)dr["InputScale"]);
 
-						var partitionFunction = new PartitionFunction(name, inputType, range);
-
+						var partitionFunction = new PartitionFunction(name, inputType, range, inputLength, inputPrecision, inputScale);
 						PartitionFunctions.Add(partitionFunction);
 					}
 				}
