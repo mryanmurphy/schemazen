@@ -134,6 +134,10 @@ namespace SchemaZen.Library.Models {
 			return PartitionFunctions.FirstOrDefault(pf => pf.Name == name);
 		}
 
+		public PartitionScheme FindPartitionScheme(string name) {
+			return PartitionSchemes.FirstOrDefault(ps => ps.Name == name);
+		}
+
 		public List<Table> FindTablesRegEx(string pattern, string excludePattern = null) {
 			return Tables.Where(t => FindTablesRegExPredicate(t, pattern, excludePattern)).ToList();
 		}
@@ -273,7 +277,6 @@ INNER JOIN sys.partition_range_values pv ON pf.function_id = pv.function_id AND 
 
 		private void LoadPartitionSchemes(SqlCommand cm) {
 			try {
-				// todo: split FGN from PS similar to above. Make a second pass instead of goofy xml jazz
 				cm.CommandText = @"
 SELECT 
 	ps.*
@@ -292,8 +295,19 @@ SELECT
 	) AS FileGroupNames
 FROM sys.partition_schemes ps
 INNER JOIN sys.partition_functions pf ON ps.function_id = pf.function_id
-
 ";
+
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["Name"];
+						var pfName = (string)dr["PartitionFunctionName"];
+						bool all = false; // script above will print each fg.name
+						var fgNames = ((string)dr["FileGroupNames"]).Split(',');
+
+						var partitionScheme = new PartitionScheme(name, pfName, all, fgNames);
+						PartitionSchemes.Add(partitionScheme);
+					}
+				}
 			} catch (SqlException) {
 				// SQL server version doesn't support partitions, nothing to do here
 			}
@@ -1167,6 +1181,40 @@ where name = @dbname
 				diff.PropsChanged.Add(p);
 			}
 
+			//get partition functions added and changed
+			foreach (var pf in PartitionFunctions) {
+				var pf2 = db.FindPartitionFunction(pf.Name);
+				if (pf2 == null) {
+					diff.PartitionFunctionsAdded.Add(pf);
+				} else {
+					if (pf.ScriptCreate() != pf2.ScriptCreate()) {
+						diff.PartitionFunctionsDiff.Add(pf);
+					}
+				}
+			}
+
+			//get deleted partition functions
+			foreach (var pf in db.PartitionFunctions.Where(pf => FindPartitionFunction(pf.Name) == null)) {
+				diff.PartitionFunctionsDeleted.Add(pf);
+			}
+
+			//get partition schemes added and changed
+			foreach (var ps in PartitionSchemes) {
+				var ps2 = db.FindPartitionScheme(ps.Name);
+				if (ps2 == null) {
+					diff.PartitionSchemesAdded.Add(ps);
+				} else {
+					if (ps.ScriptCreate() != ps2.ScriptCreate()) {
+						diff.PartitionSchemesDiff.Add(ps);
+					}
+				}
+			}
+
+			//get deleted partition schemes
+			foreach (var ps in db.PartitionSchemes.Where(pf => FindPartitionScheme(pf.Name) == null)) {
+				diff.PartitionSchemesDeleted.Add(ps);
+			}
+
 			//get tables added and changed
 			foreach (var tables in new[] { Tables, TableTypes }) {
 				foreach (var t in tables) {
@@ -1353,6 +1401,18 @@ where name = @dbname
 				text.AppendLine();
 			}
 
+			foreach (var pf in PartitionFunctions) {
+				text.AppendLine(pf.ScriptCreate());
+				text.AppendLine("GO");
+				text.AppendLine();
+			}
+
+			foreach (var ps in PartitionSchemes) {
+				text.AppendLine(ps.ScriptCreate());
+				text.AppendLine("GO");
+				text.AppendLine();
+			}
+
 			foreach (var t in Tables.Concat(TableTypes)) {
 				text.AppendLine(t.ScriptCreate());
 			}
@@ -1436,6 +1496,8 @@ where name = @dbname
 			WriteScriptDir("users", Users.ToArray(), log);
 			WriteScriptDir("synonyms", Synonyms.ToArray(), log);
 			WriteScriptDir("permissions", Permissions.ToArray(), log);
+			WriteScriptDir("partition_functions", PartitionFunctions.ToArray(), log);
+			WriteScriptDir("partition_schemes", PartitionSchemes.ToArray(), log);
 
 			ExportData(tableHint, log);
 		}
@@ -1776,6 +1838,14 @@ where name = @dbname
 		public List<Permission> PermissionsAdded = new List<Permission>();
 		public List<Permission> PermissionsDeleted = new List<Permission>();
 		public List<Permission> PermissionsDiff = new List<Permission>();
+
+		public List<PartitionFunction> PartitionFunctionsAdded = new List<PartitionFunction>();
+		public List<PartitionFunction> PartitionFunctionsDeleted = new List<PartitionFunction>();
+		public List<PartitionFunction> PartitionFunctionsDiff = new List<PartitionFunction>();
+
+		public List<PartitionScheme> PartitionSchemesAdded = new List<PartitionScheme>();
+		public List<PartitionScheme> PartitionSchemesDeleted = new List<PartitionScheme>();
+		public List<PartitionScheme> PartitionSchemesDiff = new List<PartitionScheme>();
 
 		public bool IsDiff => PropsChanged.Count > 0
 			|| TablesAdded.Count > 0

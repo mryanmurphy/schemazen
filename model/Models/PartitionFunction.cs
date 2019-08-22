@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace SchemaZen.Library.Models {
@@ -103,14 +104,46 @@ namespace SchemaZen.Library.Models {
 
 				default:
 					var message = $"Error scripting partition function {Name}."
-						+ "SQL data type {InputParameterType} is not supported.";
+						+ $"SQL data type {InputParameterType} is not supported.";
 					throw new NotSupportedException(message);
 			}
 
+			string quoteCharacter = ShouldQuoteBoundaryValue(InputParameterType) ? "'" : string.Empty;
+
 			text.AppendLine(")");
 			text.AppendLine($"AS RANGE {Range:G}");
-			text.AppendLine($"FOR VALUES ({string.Join(", ", BoundaryValues.ToArray())});");
+
+			var values = BoundaryValues.Select(v => quoteCharacter == "'" ? v.Replace("'", "''") : v).ToArray();
+			var joinedValues = string.Join($"{quoteCharacter},{quoteCharacter}", values);
+			text.AppendLine($"FOR VALUES ({quoteCharacter}{joinedValues}{quoteCharacter});");
+
 			return text.ToString();
+		}
+
+		private bool ShouldQuoteBoundaryValue(string type) {
+			bool result;
+
+			switch (type) {
+				case "bigint":
+				case "bit":
+				case "float":
+				case "int":
+				case "money":
+				case "real":
+				case "smallint":
+				case "smallmoney":
+				case "tinyint":
+				case "decimal":
+				case "numeric":
+					result = false;
+					break;
+
+				default:
+					result = true;
+					break;
+			}
+
+			return result;
 		}
 	}
 }
