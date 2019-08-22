@@ -154,7 +154,7 @@ namespace SchemaZen.Library.Models {
 		public static HashSet<string> Dirs { get; } = new HashSet<string> {
 			"user_defined_types", "tables", "foreign_keys", "assemblies", "functions", "procedures",
 			"triggers", "views", "xmlschemacollections", "data", "roles", "users", "synonyms",
-			"table_types", "schemas", "props", "permissions"
+			"table_types", "schemas", "props", "permissions", "partition_functions", "partition_schemes"
 		};
 
 		public static string ValidTypes {
@@ -243,10 +243,10 @@ LEFT JOIN sys.types ut ON pp.user_type_id = ut.user_type_id AND ut.is_user_defin
 					while (dr.Read()) {
 						var name = (string)dr["PartitionFunctionName"];
 						var range = (PartitionFunction.RangeKind)Enum.Parse(typeof(PartitionFunction.RangeKind), (string)dr["PartitionFunctionRangeType"]);
-						var inputType = (string)dr["InputType"];
-						int inputLength = int.Parse((string)dr["InputMaxLength"]);
-						byte inputPrecision = byte.Parse((string)dr["InputPrecision"]);
-						int inputScale = int.Parse((string)dr["InputScale"]);
+						var inputType = (string)dr["TypeName"];
+						int inputLength = (short)dr["InputMaxLength"];
+						byte inputPrecision = (byte)dr["InputPrecision"];
+						byte inputScale = (byte)dr["InputScale"];
 
 						var partitionFunction = new PartitionFunction(name, inputType, range, inputLength, inputPrecision, inputScale);
 						PartitionFunctions.Add(partitionFunction);
@@ -265,7 +265,7 @@ INNER JOIN sys.partition_range_values pv ON pf.function_id = pv.function_id AND 
 				using (var dr = cm.ExecuteReader()) {
 					while (dr.Read()) {
 						var name = (string)dr["PartitionFunctionName"];
-						var value = (string)dr["InputValue"];
+						var value = dr["InputValue"].ToString();
 						FindPartitionFunction(name)?.BoundaryValues?.Add(value);
 					}
 				}
@@ -1852,6 +1852,12 @@ where name = @dbname
 			|| TablesDiff.Count > 0
 			|| TableTypesDiff.Count > 0
 			|| TablesDeleted.Count > 0
+			|| PartitionFunctionsAdded.Count > 0
+			|| PartitionFunctionsDiff.Count > 0
+			|| PartitionFunctionsDeleted.Count > 0
+			|| PartitionSchemesAdded.Count > 0
+			|| PartitionSchemesDiff.Count > 0
+			|| PartitionSchemesDeleted.Count > 0
 			|| RoutinesAdded.Count > 0
 			|| RoutinesDiff.Count > 0
 			|| RoutinesDeleted.Count > 0
@@ -1897,6 +1903,28 @@ where name = @dbname
 				"foreign keys altered"));
 			sb.Append(Summarize(includeNames, PropsChanged.Select(o => o.Name).ToList(),
 				"properties changed"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsAdded.Select(o => o.Name)
+					.ToList(),
+				"partition functions in source but not in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsDiff.Select(o => o.Name)
+					.ToList(),
+				"partition functions not in source but in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsDeleted.Select(o => o.Name).ToList(),
+				"partition functions deleted"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesAdded.Select(o => o.Name)
+					.ToList(),
+				"partition schemes in source but not in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesDiff.Select(o => o.Name)
+					.ToList(),
+				"partition schemes not in source but in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesDeleted.Select(o => o.Name).ToList(),
+				"partition schemes deleted"));
 			sb.Append(Summarize(includeNames,
 				RoutinesAdded.Select(o => $"{o.RoutineType.ToString()} {o.Owner}.{o.Name}")
 					.ToList(),

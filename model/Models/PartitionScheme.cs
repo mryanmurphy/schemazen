@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace SchemaZen.Library.Models
@@ -39,7 +40,7 @@ namespace SchemaZen.Library.Models
 
 		public string ScriptCreate()
 		{
-			var text = new StringBuilder($"CREATE PARTITION SCHEME {Name}");
+			var text = new StringBuilder($"CREATE PARTITION SCHEME {Name} ");
 			text.AppendLine($"AS PARTITION {PartitionFunctionName}");
 
 			if (IsAllSpecified) {
