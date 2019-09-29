@@ -28,6 +28,12 @@ steps:
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
 
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(Build.SourcesDirectory)'
+    contents: '**/$(buildConfiguration)/**/?(*.exe|*.dll|*.pdb)'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
 - task: VSTest@2
   inputs:
     platform: '$(buildPlatform)'
@@ -43,3 +49,4 @@ steps:
     tag: '$(Build.BuildNumber)'
     changeLogCompareToRelease: 'lastFullRelease'
     changeLogType: 'commitBased'
+    assets: $(Build.ArtifactStagingDirectory)/SchemaZen.exe
