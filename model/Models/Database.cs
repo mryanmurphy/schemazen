@@ -81,6 +81,8 @@ namespace SchemaZen.Library.Models {
 		public List<SqlUser> Users { get; set; } = new List<SqlUser>();
 		public List<Constraint> ViewIndexes { get; set; } = new List<Constraint>();
 		public List<Permission> Permissions { get; set; } = new List<Permission>();
+		public List<PartitionFunction> PartitionFunctions { get; set; } = new List<PartitionFunction>();
+		public List<PartitionScheme> PartitionSchemes { get; set; } = new List<PartitionScheme>();
 
 		public DbProp FindProp(string name) {
 			return Props.FirstOrDefault(p =>
@@ -128,6 +130,14 @@ namespace SchemaZen.Library.Models {
 			return Permissions.FirstOrDefault(g => g.Name == name);
 		}
 
+		public PartitionFunction FindPartitionFunction(string name) {
+			return PartitionFunctions.FirstOrDefault(pf => pf.Name == name);
+		}
+
+		public PartitionScheme FindPartitionScheme(string name) {
+			return PartitionSchemes.FirstOrDefault(ps => ps.Name == name);
+		}
+
 		public List<Table> FindTablesRegEx(string pattern, string excludePattern = null) {
 			return Tables.Where(t => FindTablesRegExPredicate(t, pattern, excludePattern)).ToList();
 		}
@@ -144,7 +154,7 @@ namespace SchemaZen.Library.Models {
 		public static HashSet<string> Dirs { get; } = new HashSet<string> {
 			"user_defined_types", "tables", "foreign_keys", "assemblies", "functions", "procedures",
 			"triggers", "views", "xmlschemacollections", "data", "roles", "users", "synonyms",
-			"table_types", "schemas", "props", "permissions"
+			"table_types", "schemas", "props", "permissions", "partition_functions", "partition_schemes"
 		};
 
 		public static string ValidTypes {
@@ -179,6 +189,8 @@ namespace SchemaZen.Library.Models {
 			Synonyms.Clear();
 			Roles.Clear();
 			Permissions.Clear();
+			PartitionFunctions.Clear();
+			PartitionSchemes.Clear();
 
 			using (var cn = new SqlConnection(Connection)) {
 				cn.Open();
@@ -201,7 +213,103 @@ namespace SchemaZen.Library.Models {
 					LoadSynonyms(cm);
 					LoadRoles(cm);
 					LoadPermissions(cm);
+					LoadPartitionFunctions(cm);
+					LoadPartitionSchemes(cm);
 				}
+			}
+		}
+
+		private void LoadPartitionFunctions(SqlCommand cm) {
+			try {
+				// Load function metadata
+				cm.CommandText = @"
+SELECT 
+	pf.[name] AS PartitionFunctionName
+	, CASE WHEN pf.[boundary_value_on_right] = 1 THEN 'RIGHT' ELSE 'LEFT' END AS PartitionFunctionRangeType
+	, pp.user_type_id AS InputTypeID
+	, CASE WHEN pp.system_type_id = pp.user_type_id THEN 0 ELSE 1 END AS IsInputTypeUserDefined
+	, CASE WHEN pp.system_type_id = pp.user_type_id THEN st.[name] ELSE ut.[name] END AS TypeName
+	, pp.max_length AS InputMaxLength
+	, pp.[precision] AS InputPrecision
+	, pp.scale AS InputScale
+	, pp.collation_name AS InputCollation
+FROM sys.partition_functions pf
+INNER JOIN sys.partition_parameters pp ON pf.function_id = pp.function_id
+LEFT JOIN sys.types st ON pp.system_type_id = st.system_type_id AND st.is_user_defined = 0
+LEFT JOIN sys.types ut ON pp.user_type_id = ut.user_type_id AND ut.is_user_defined = 1
+";
+
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["PartitionFunctionName"];
+						var range = (PartitionFunction.RangeKind)Enum.Parse(typeof(PartitionFunction.RangeKind), (string)dr["PartitionFunctionRangeType"]);
+						var inputType = (string)dr["TypeName"];
+						int inputLength = (short)dr["InputMaxLength"];
+						byte inputPrecision = (byte)dr["InputPrecision"];
+						byte inputScale = (byte)dr["InputScale"];
+
+						var partitionFunction = new PartitionFunction(name, inputType, range, inputLength, inputPrecision, inputScale);
+						PartitionFunctions.Add(partitionFunction);
+					}
+				}
+
+				// Load function values
+				cm.CommandText = @"
+SELECT 
+	pf.[name] AS PartitionFunctionName
+	, pv.[value] AS InputValue
+FROM sys.partition_functions pf
+INNER JOIN sys.partition_parameters pp ON pf.function_id = pp.function_id
+INNER JOIN sys.partition_range_values pv ON pf.function_id = pv.function_id AND pp.parameter_id = pv.parameter_id
+";
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["PartitionFunctionName"];
+						var value = dr["InputValue"].ToString();
+						FindPartitionFunction(name)?.BoundaryValues?.Add(value);
+					}
+				}
+
+			} catch (SqlException) {
+				// SQL server version doesn't support partitions, nothing to do here
+			}
+		}
+
+		private void LoadPartitionSchemes(SqlCommand cm) {
+			try {
+				cm.CommandText = @"
+SELECT 
+	ps.*
+	, pf.[name] AS PartitionFunctionName
+	,(
+		SELECT
+		STUFF((SELECT
+			N',' + QUOTENAME(fg.name)
+				FROM sys.data_spaces ds
+				JOIN sys.destination_data_spaces AS dds ON dds.partition_scheme_id = ps.data_space_id
+				JOIN sys.filegroups AS fg ON fg.data_space_id = dds.data_space_id
+				WHERE ps.data_space_id = ds.data_space_id
+				ORDER BY dds.destination_id
+				FOR XML PATH(''), TYPE
+		).value('.', 'nvarchar(MAX)'),1,1,N'')
+	) AS FileGroupNames
+FROM sys.partition_schemes ps
+INNER JOIN sys.partition_functions pf ON ps.function_id = pf.function_id
+";
+
+				using (var dr = cm.ExecuteReader()) {
+					while (dr.Read()) {
+						var name = (string)dr["Name"];
+						var pfName = (string)dr["PartitionFunctionName"];
+						bool all = false; // script above will print each fg.name
+						var fgNames = ((string)dr["FileGroupNames"]).Split(',');
+
+						var partitionScheme = new PartitionScheme(name, pfName, all, fgNames);
+						PartitionSchemes.Add(partitionScheme);
+					}
+				}
+			} catch (SqlException) {
+				// SQL server version doesn't support partitions, nothing to do here
 			}
 		}
 
@@ -348,7 +456,7 @@ begin
 end
 
 select 
-    name
+	name
 ,   script
 from #ScriptedRoles
 ";
@@ -579,7 +687,7 @@ from #ScriptedRoles
 						UPDATE_RULE, 
 						DELETE_RULE,
 						fk.is_disabled,
-                        fk.is_system_named
+						fk.is_system_named
 					from INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
 						inner join sys.foreign_keys fk on rc.CONSTRAINT_NAME = fk.name and rc.CONSTRAINT_SCHEMA = OBJECT_SCHEMA_NAME(fk.parent_object_id)";
 			using (var dr = cm.ExecuteReader()) {
@@ -740,7 +848,7 @@ order by fk.name, fkc.constraint_column_id
 						c.name as COLUMN_NAME, 
 						d.name as DEFAULT_NAME, 
 						d.definition as DEFAULT_VALUE,
-                        d.is_system_named as IS_SYSTEM_NAMED
+						d.is_system_named as IS_SYSTEM_NAMED
 					from sys.tables t 
 						inner join sys.columns c on c.object_id = t.object_id
 						inner join sys.default_constraints d on c.column_id = d.parent_column_id
@@ -919,18 +1027,18 @@ order by fk.name, fkc.constraint_column_id
 		private void LoadUserDefinedTypes(SqlCommand cm) {
 			//get types
 			cm.CommandText = @"
-            select
-                s.name as 'Type_Schema',
-                t.name as 'Type_Name',
-                tt.name as 'Base_Type_Name',
-                t.max_length as 'Max_Length',
-                t.is_nullable as 'Nullable'	
-            from sys.types t
-            inner join sys.schemas s on s.schema_id = t.schema_id
-            inner join sys.types tt on t.system_type_id = tt.user_type_id
-            where
-                t.is_user_defined = 1
-            and t.is_table_type = 0";
+			select
+				s.name as 'Type_Schema',
+				t.name as 'Type_Name',
+				tt.name as 'Base_Type_Name',
+				t.max_length as 'Max_Length',
+				t.is_nullable as 'Nullable'	
+			from sys.types t
+			inner join sys.schemas s on s.schema_id = t.schema_id
+			inner join sys.types tt on t.system_type_id = tt.user_type_id
+			where
+				t.is_user_defined = 1
+			and t.is_table_type = 0";
 
 			using (var dr = cm.ExecuteReader()) {
 				LoadUserDefinedTypesBase(dr, UserDefinedTypes);
@@ -1071,6 +1179,40 @@ where name = @dbname
 				where p.Script() != p2.Script()
 				select p) {
 				diff.PropsChanged.Add(p);
+			}
+
+			//get partition functions added and changed
+			foreach (var pf in PartitionFunctions) {
+				var pf2 = db.FindPartitionFunction(pf.Name);
+				if (pf2 == null) {
+					diff.PartitionFunctionsAdded.Add(pf);
+				} else {
+					if (pf.ScriptCreate() != pf2.ScriptCreate()) {
+						diff.PartitionFunctionsDiff.Add(pf);
+					}
+				}
+			}
+
+			//get deleted partition functions
+			foreach (var pf in db.PartitionFunctions.Where(pf => FindPartitionFunction(pf.Name) == null)) {
+				diff.PartitionFunctionsDeleted.Add(pf);
+			}
+
+			//get partition schemes added and changed
+			foreach (var ps in PartitionSchemes) {
+				var ps2 = db.FindPartitionScheme(ps.Name);
+				if (ps2 == null) {
+					diff.PartitionSchemesAdded.Add(ps);
+				} else {
+					if (ps.ScriptCreate() != ps2.ScriptCreate()) {
+						diff.PartitionSchemesDiff.Add(ps);
+					}
+				}
+			}
+
+			//get deleted partition schemes
+			foreach (var ps in db.PartitionSchemes.Where(pf => FindPartitionScheme(pf.Name) == null)) {
+				diff.PartitionSchemesDeleted.Add(ps);
 			}
 
 			//get tables added and changed
@@ -1259,6 +1401,18 @@ where name = @dbname
 				text.AppendLine();
 			}
 
+			foreach (var pf in PartitionFunctions) {
+				text.AppendLine(pf.ScriptCreate());
+				text.AppendLine("GO");
+				text.AppendLine();
+			}
+
+			foreach (var ps in PartitionSchemes) {
+				text.AppendLine(ps.ScriptCreate());
+				text.AppendLine("GO");
+				text.AppendLine();
+			}
+
 			foreach (var t in Tables.Concat(TableTypes)) {
 				text.AppendLine(t.ScriptCreate());
 			}
@@ -1342,6 +1496,8 @@ where name = @dbname
 			WriteScriptDir("users", Users.ToArray(), log);
 			WriteScriptDir("synonyms", Synonyms.ToArray(), log);
 			WriteScriptDir("permissions", Permissions.ToArray(), log);
+			WriteScriptDir("partition_functions", PartitionFunctions.ToArray(), log);
+			WriteScriptDir("partition_schemes", PartitionSchemes.ToArray(), log);
 
 			ExportData(tableHint, log);
 		}
@@ -1683,11 +1839,25 @@ where name = @dbname
 		public List<Permission> PermissionsDeleted = new List<Permission>();
 		public List<Permission> PermissionsDiff = new List<Permission>();
 
+		public List<PartitionFunction> PartitionFunctionsAdded = new List<PartitionFunction>();
+		public List<PartitionFunction> PartitionFunctionsDeleted = new List<PartitionFunction>();
+		public List<PartitionFunction> PartitionFunctionsDiff = new List<PartitionFunction>();
+
+		public List<PartitionScheme> PartitionSchemesAdded = new List<PartitionScheme>();
+		public List<PartitionScheme> PartitionSchemesDeleted = new List<PartitionScheme>();
+		public List<PartitionScheme> PartitionSchemesDiff = new List<PartitionScheme>();
+
 		public bool IsDiff => PropsChanged.Count > 0
 			|| TablesAdded.Count > 0
 			|| TablesDiff.Count > 0
 			|| TableTypesDiff.Count > 0
 			|| TablesDeleted.Count > 0
+			|| PartitionFunctionsAdded.Count > 0
+			|| PartitionFunctionsDiff.Count > 0
+			|| PartitionFunctionsDeleted.Count > 0
+			|| PartitionSchemesAdded.Count > 0
+			|| PartitionSchemesDiff.Count > 0
+			|| PartitionSchemesDeleted.Count > 0
 			|| RoutinesAdded.Count > 0
 			|| RoutinesDiff.Count > 0
 			|| RoutinesDeleted.Count > 0
@@ -1733,6 +1903,28 @@ where name = @dbname
 				"foreign keys altered"));
 			sb.Append(Summarize(includeNames, PropsChanged.Select(o => o.Name).ToList(),
 				"properties changed"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsAdded.Select(o => o.Name)
+					.ToList(),
+				"partition functions in source but not in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsDiff.Select(o => o.Name)
+					.ToList(),
+				"partition functions not in source but in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionFunctionsDeleted.Select(o => o.Name).ToList(),
+				"partition functions deleted"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesAdded.Select(o => o.Name)
+					.ToList(),
+				"partition schemes in source but not in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesDiff.Select(o => o.Name)
+					.ToList(),
+				"partition schemes not in source but in target"));
+			sb.Append(Summarize(includeNames,
+				PartitionSchemesDeleted.Select(o => o.Name).ToList(),
+				"partition schemes deleted"));
 			sb.Append(Summarize(includeNames,
 				RoutinesAdded.Select(o => $"{o.RoutineType.ToString()} {o.Owner}.{o.Name}")
 					.ToList(),
