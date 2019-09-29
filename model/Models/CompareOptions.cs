@@ -7,6 +7,7 @@ namespace SchemaZen.Library.Models {
 		None = 0,
 		IgnoreColumnPosition = 1 << 1,
 		IgnorePermissions = 1 << 2,
+		IgnoreRoutines = 1 << 3,
 	}
 
 }

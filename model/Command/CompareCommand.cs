@@ -10,6 +10,7 @@ namespace SchemaZen.Library.Command {
 		public string OutDiff { get; set; }
 		public bool IgnoreColumnPosition { get; set; }
 		public bool IgnorePermissions { get; set; }
+		public bool IgnoreRoutines { get; set; }
 
 		public CompareOptions CompareOptions {
 			get {
@@ -17,6 +18,7 @@ namespace SchemaZen.Library.Command {
 
 				if (IgnoreColumnPosition) flags |= CompareOptions.IgnoreColumnPosition;
 				if (IgnorePermissions) flags |= CompareOptions.IgnorePermissions;
+				if (IgnoreRoutines) flags |= CompareOptions.IgnoreRoutines;
 
 				return flags;
 			}

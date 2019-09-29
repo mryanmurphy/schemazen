@@ -1242,22 +1242,24 @@ where name = @dbname
 				diff.TablesDeleted.Add(t);
 			}
 
-			//get procs added and changed
-			foreach (var r in Routines) {
-				var r2 = db.FindRoutine(r.Name, r.Owner);
-				if (r2 == null) {
-					diff.RoutinesAdded.Add(r);
-				} else {
-					//compare mutual procs
-					if (r.Text.Trim() != r2.Text.Trim()) {
-						diff.RoutinesDiff.Add(r);
+			if ((options & CompareOptions.IgnoreRoutines) == CompareOptions.IgnoreRoutines) {
+				//get procs added and changed
+				foreach (var r in Routines) {
+					var r2 = db.FindRoutine(r.Name, r.Owner);
+					if (r2 == null) {
+						diff.RoutinesAdded.Add(r);
+					} else {
+						//compare mutual procs
+						if (r.Text.Trim() != r2.Text.Trim()) {
+							diff.RoutinesDiff.Add(r);
+						}
 					}
 				}
-			}
 
-			//get procs deleted
-			foreach (var r in db.Routines.Where(r => FindRoutine(r.Name, r.Owner) == null)) {
-				diff.RoutinesDeleted.Add(r);
+				//get procs deleted
+				foreach (var r in db.Routines.Where(r => FindRoutine(r.Name, r.Owner) == null)) {
+					diff.RoutinesDeleted.Add(r);
+				}
 			}
 
 			//get added and compare mutual foreign keys
