@@ -1242,7 +1242,7 @@ where name = @dbname
 				diff.TablesDeleted.Add(t);
 			}
 
-			if ((options & CompareOptions.IgnoreRoutines) == CompareOptions.IgnoreRoutines) {
+			if ((options & CompareOptions.IgnoreRoutines) != CompareOptions.IgnoreRoutines) {
 				//get procs added and changed
 				foreach (var r in Routines) {
 					var r2 = db.FindRoutine(r.Name, r.Owner);
