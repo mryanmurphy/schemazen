@@ -49,4 +49,4 @@ steps:
     tag: '$(Build.BuildNumber)'
     changeLogCompareToRelease: 'lastFullRelease'
     changeLogType: 'commitBased'
-    assets: $(Build.ArtifactStagingDirectory)/SchemaZen.exe
+    assets: $(Build.ArtifactStagingDirectory)/**/$(buildConfiguration)/**/SchemaZen.exe
